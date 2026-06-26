@@ -86,6 +86,74 @@ exports.close = async (req, res) => {
   }
 };
 
+exports.update = async (req, res) => {
+  const { originalPrice, groupPrice, pickupTime, stock } = req.body;
+  if (
+    originalPrice === undefined &&
+    groupPrice === undefined &&
+    pickupTime === undefined &&
+    stock === undefined
+  ) {
+    return res.status(400).json({ code: 400, msg: '至少传一个要改的字段' });
+  }
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [rows] = await conn.query(
+      'SELECT * FROM group_buys WHERE id = ? AND leader_id = ? FOR UPDATE',
+      [req.params.id, req.user.id]
+    );
+    if (rows.length === 0) {
+      await conn.rollback();
+      conn.release();
+      return res.status(404).json({ code: 404, msg: '团购不存在或非本人发布' });
+    }
+    const gb = rows[0];
+    if (gb.status !== 1) {
+      await conn.rollback();
+      conn.release();
+      return res.status(400).json({ code: 400, msg: '只允许编辑进行中的团购' });
+    }
+    const [orderCount] = await conn.query(
+      'SELECT COUNT(*) AS cnt FROM orders WHERE group_buy_id = ? AND status != 3',
+      [req.params.id]
+    );
+    if (orderCount[0].cnt > 0) {
+      await conn.rollback();
+      conn.release();
+      return res.status(400).json({ code: 400, msg: '已有邻居下单，不允许再改' });
+    }
+    const sets = [];
+    const params = [];
+    if (originalPrice !== undefined) {
+      sets.push('original_price = ?');
+      params.push(originalPrice);
+    }
+    if (groupPrice !== undefined) {
+      sets.push('group_price = ?');
+      params.push(groupPrice);
+    }
+    if (pickupTime !== undefined) {
+      sets.push('pickup_time = ?');
+      params.push(pickupTime);
+    }
+    if (stock !== undefined) {
+      sets.push('stock = ?');
+      params.push(Number(stock));
+    }
+    params.push(req.params.id);
+    await conn.query(`UPDATE group_buys SET ${sets.join(', ')} WHERE id = ?`, params);
+    const [updated] = await conn.query('SELECT * FROM group_buys WHERE id = ?', [req.params.id]);
+    await conn.commit();
+    conn.release();
+    res.json({ code: 0, msg: '修改成功', data: updated[0] });
+  } catch (err) {
+    await conn.rollback();
+    conn.release();
+    res.status(500).json({ code: 500, msg: '修改失败', error: err.message });
+  }
+};
+
 exports.listMine = async (req, res) => {
   try {
     const [rows] = await pool.query(

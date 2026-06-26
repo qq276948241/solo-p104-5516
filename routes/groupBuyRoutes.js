@@ -8,5 +8,6 @@ router.get('/', auth, gbCtrl.list);
 router.get('/mine', auth, requireLeader, gbCtrl.listMine);
 router.get('/:id', auth, gbCtrl.getOne);
 router.put('/:id/close', auth, requireLeader, gbCtrl.close);
+router.put('/:id', auth, requireLeader, gbCtrl.update);
 
 module.exports = router;
