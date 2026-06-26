@@ -141,14 +141,23 @@ exports.update = async (req, res) => {
       conn.release();
       return res.status(400).json({ code: 400, msg: '只允许编辑进行中的团购' });
     }
-    const [orderCount] = await conn.query(
-      'SELECT COUNT(*) AS cnt FROM orders WHERE group_buy_id = ? AND status != 3',
+    const [sumRow] = await conn.query(
+      'SELECT COUNT(*) AS cnt, COALESCE(SUM(quantity), 0) AS sold FROM orders WHERE group_buy_id = ? AND status != 3 FOR UPDATE',
       [req.params.id]
     );
-    if (orderCount[0].cnt > 0) {
+    const { cnt, sold } = sumRow[0];
+    if (cnt > 0) {
       await conn.rollback();
       conn.release();
       return res.status(400).json({ code: 400, msg: '已有邻居下单，不允许再改' });
+    }
+    if (stock !== undefined) {
+      const newStock = Number(stock);
+      if (newStock < sold) {
+        await conn.rollback();
+        conn.release();
+        return res.status(400).json({ code: 400, msg: `新库存不能少于已下单的 ${sold} 份` });
+      }
     }
     const sets = [];
     const params = [];
