@@ -1,10 +1,41 @@
 const pool = require('../config/db');
 
-exports.create = async (req, res) => {
-  const { title, originalPrice, groupPrice, pickupTime, stock } = req.body;
-  if (!title || !originalPrice || !groupPrice || !pickupTime || stock === undefined) {
-    return res.status(400).json({ code: 400, msg: '缺少必填字段' });
+function validateGroupBuyFields(body, mode) {
+  const { title, originalPrice, groupPrice, pickupTime, stock } = body;
+  if (mode === 'create') {
+    if (!title || !originalPrice || !groupPrice || !pickupTime || stock === undefined) {
+      return { ok: false, status: 400, msg: '缺少必填字段' };
+    }
+    return { ok: true, fields: { title, originalPrice, groupPrice, pickupTime, stock } };
   }
+  if (mode === 'update') {
+    if (
+      originalPrice === undefined &&
+      groupPrice === undefined &&
+      pickupTime === undefined &&
+      stock === undefined
+    ) {
+      return { ok: false, status: 400, msg: '至少传一个要改的字段' };
+    }
+    return {
+      ok: true,
+      fields: {
+        originalPrice,
+        groupPrice,
+        pickupTime,
+        stock,
+      },
+    };
+  }
+  return { ok: false, status: 500, msg: 'unknown mode' };
+}
+
+exports.create = async (req, res) => {
+  const v = validateGroupBuyFields(req.body, 'create');
+  if (!v.ok) {
+    return res.status(v.status).json({ code: v.status, msg: v.msg });
+  }
+  const { title, originalPrice, groupPrice, pickupTime, stock } = v.fields;
   try {
     const [result] = await pool.query(
       'INSERT INTO group_buys (leader_id, title, original_price, group_price, pickup_time, stock) VALUES (?, ?, ?, ?, ?, ?)',
@@ -87,15 +118,11 @@ exports.close = async (req, res) => {
 };
 
 exports.update = async (req, res) => {
-  const { originalPrice, groupPrice, pickupTime, stock } = req.body;
-  if (
-    originalPrice === undefined &&
-    groupPrice === undefined &&
-    pickupTime === undefined &&
-    stock === undefined
-  ) {
-    return res.status(400).json({ code: 400, msg: '至少传一个要改的字段' });
+  const v = validateGroupBuyFields(req.body, 'update');
+  if (!v.ok) {
+    return res.status(v.status).json({ code: v.status, msg: v.msg });
   }
+  const { originalPrice, groupPrice, pickupTime, stock } = v.fields;
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
